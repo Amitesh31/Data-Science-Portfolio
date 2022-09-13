@@ -1,0 +1,282 @@
+---
+title: "Course Project R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+```{r}
+forest_data = read.csv("forestfires.csv")
+forest_data
+```
+
+```{r}
+dim(forest_data)
+```
+
+```{r}
+colnames(forest_data)
+```
+
+ Check to see if any data missing - we're OK here so can proceed.
+```{r}
+sum(is.na(forest_data))
+```
+
+Check to see how many cases have an area of 0
+```{r}
+length(which(forest_data$area==0))
+```
+
+Convert month and day string variables into numeric values
+```{r}
+#forest_data$month <- as.numeric(as.factor(forest_data$month))
+#forest_data$day <- as.numeric(as.factor(forest_data$day))
+
+forest_data$month <- as.numeric(factor(forest_data$month, levels = c("jan", "feb", "mar", 
+                          "apr", "may", "jun", "jul","aug","sep","oct","nov","dec"), ordered = TRUE))
+forest_data$day <- as.numeric(factor(forest_data$day, levels = c("mon", "tue", "wed", 
+                          "thu", "fri", "sat", "sun"),
+            ordered = TRUE))
+forest_data
+```
+
+```{r}
+library(ggplot2)
+#ggplot()+ geom_point(aes(x=forest_data$FFMC, y=forest_data$area))
+
+```
+
+
+ Density plot - Predictors
+shows us rain as right skewed and FFMC is left skewed.
+```{r}
+par(mfrow=c(2,6),mar=c(3.90, 4.25, 2.5, 0.5))
+for (variables in 1:(dim(forest_data)[2]-1)){
+  thisvar = forest_data[,variables]
+  d <- density(thisvar)
+  plot(d, main = names(forest_data[variables]),xlab="")
+  polygon(d, col="cyan", border="blue")
+  title("Density plots for all 12 Model Variables", line = -1, outer = TRUE)}
+```
+
+
+ Rain variable has a heavy 0 distribution with only 1.56% of the data being non zero
+ This will therefore be removed from the model as there is not enough variance
+```{r}
+print(paste("Percentage non-zero rain: ",round(length(which(forest_data$rain>0)) /dim(forest_data)[1]*100,2)))
+# Rain variable removed 
+forest_data <- forest_data[,-which(colnames(forest_data)== "rain")]
+```
+ 
+ 
+```{r}
+# Since the FFMC is left-skew, we'll cube it to normalize it
+par(mfrow=c(1,2),mar=c(5, 4.25, 5.5, 2))
+d <- density(forest_data$FFMC)
+plot(d,main="FFMC Density (original)",xlab="FFMC index", col='tomato', lwd=3)
+# FFMC is cubed 
+forest_data$FFMC<- (forest_data$FFMC^3)
+d <- density(forest_data$FFMC)
+plot(d,main="FFMC Density (x^3)",xlab="FFMC index", col='tomato', lwd=3)
+```
+ 
+ 
+ Density plot - Outcome
+Shows us a extensive right skew in the data
+```{r}
+par(mfrow=c(1,2),mar=c(5, 4.25, 5.5, 2))
+  d <- density(forest_data$area)
+  plot(d,main="Area Burned Density (original)",xlab="Area Burned (Hec)", col='tomato', lwd=3)
+  d <- density(log(forest_data$area+1))
+  plot(d,main="Area Burned Density (log(x+1))",xlab="Area Burned (Hec)", col='tomato', lwd=3)
+```
+ Heavy skew indicates log transformation
+ Since there are also many 0 counts for area, we'll first add 1 before transforming
+```{r}
+# Multiply area with log(x+1)
+forest_data$area <- log(forest_data$area+1)
+```
+ 
+ 
+ Examine correlations between all 12 predictors and the area outcome 
+ As the correlation between area and any predictors is not great(close to 1) the linear regression will not work for this data
+```{r}
+library(corrplot)
+par(mfrow=c(1,1))
+M <- cor(forest_data)
+corrplot(M, method="color", outline = TRUE,type="lower",order = "hclust",
+         tl.col="black", tl.srt=45, diag=FALSE,tl.cex = 1,mar=c(0,0,3,0),
+         title="Correlation Matrix between Predictor and Outcome variables")
+```
+ 
+
+
+ 
+ 
+```{r}
+assumptionsmodel_all <- lm(area ~ ., data=forest_data)
+assumptionsmodel_0 <- lm(area ~ .,data=forest_data[which(forest_data$area>0),])
+# Remove all cases with an area burned of 0
+forest_data <- forest_data[which(forest_data$area>0),]
+# Plots both with and without 0 residuals
+par(mfrow=c(1,2))
+hist(assumptionsmodel_all$residuals, main = "Data with 0 area burned", xlab = 'Residuals')
+abline(v=mean(assumptionsmodel_all$residuals), col='red', lwd=2)
+hist(assumptionsmodel_0$residuals,main = "Data without 0 area burned", xlab = 'Residuals')
+abline(v=mean(assumptionsmodel_0$residuals), col='red', lwd=2)
+```
+
+
+
+
+```{r}
+lm_model = lm(area~. , data = forest_data)
+summary(lm_model)
+
+# As the p value for each of the predictors is low, none of the them are significantly associated with the output variable "area" .
+```
+ 
+```{r}
+# Lm_pred gives the predicted values 
+lm_pred = predict(lm_model,forest_data)
+mean((lm_pred - forest_data$area)^2)    # MSE
+rmse(lm_pred, forest_data$area)
+R2(lm_pred, forest_data$area)
+```
+
+```{r}
+actuals_preds <- data.frame(cbind(actuals=forest_data$area, predicteds=lm_pred))
+min_max_accuracy <- mean(apply(actuals_preds, 1, min) / apply(actuals_preds, 1, max)) 
+min_max_accuracy
+```
+
+ 
+```{r}
+library(tree)
+set.seed(1)
+model1 = tree(area ~. , forest_data)
+plot(model1)
+text(model1, pretty =0)
+
+```
+ 
+```{r}
+summary(model1)
+```
+ 
+```{r}
+library(Metrics)
+library(caret)
+tree_pred = predict(model1,forest_data)
+mean((tree_pred - forest_data$area)^2)
+rmse(tree_pred, forest_data$area)
+R2(tree_pred, forest_data$area)
+```
+```{r}
+actuals_preds <- data.frame(cbind(actuals=forest_data$area, predicteds=tree_pred))
+min_max_accuracy <- mean(apply(actuals_preds, 1, min) / apply(actuals_preds, 1, max)) 
+min_max_accuracy
+
+```
+
+
+ 
+```{r}
+library(randomForest)
+set.seed(12)
+model2=randomForest(area~.,data=forest_data ,mtry=10, importance=TRUE)
+model2
+```
+
+```{r}
+```
+
+
+```{r}
+rf_tree_pred = predict(model2,newdata = forest_data)
+mean((rf_tree_pred - forest_data$area)^2)
+rmse(rf_tree_pred, forest_data$area)
+R2(rf_tree_pred, forest_data$area)
+```
+
+```{r}
+rf_actuals_preds <- data.frame(cbind(actuals=forest_data$area, predicteds=rf_tree_pred))
+min_max_accuracy <- mean(apply(rf_actuals_preds, 1, min) / apply(rf_actuals_preds, 1, max)) 
+min_max_accuracy
+```
+
+```{r}
+rf_tree_pred
+```
+
+
+```{r}
+# Prediction using Random forest model
+predict(model2, data.frame(X = 8, Y=6, month = 8,day = 5, FFMC= 731432.7, DMC = 108,
+                           DC = 529.8, ISI = 12, temp = 21.2, RH = 51, wind = 8.9))
+```
+
+
+
+```{r}
+# prediction using decision tree
+predict(model1, data.frame(X = 8, Y=6, month = 8,day = 5, FFMC= 731432.7, DMC = 108,
+                           DC = 529.8, ISI = 12, temp = 21.2, RH = 51, wind = 8.9))
+```
+
+```{r}
+# prediction using linear regression
+predict(lm_model, data.frame(X = 8, Y=6, month = 8,day = 5, FFMC= 731432.7, DMC = 108,
+                           DC = 529.8, ISI = 12, temp = 21.2, RH = 51, wind = 8.9))
+```
+
+
+```{r}
+library(ggplot2)
+ggplot(forest_data, aes(x = DMC, y = area)) +
+  geom_segment(aes(xend = DMC, yend = rf_tree_pred), alpha = .2) +  # alpha to fade lines
+  geom_point() +
+  geom_point(aes(y = rf_tree_pred), shape = 1, color = "blue") +
+  theme_bw()
+```
+
+```{r}
+library(ggplot2)
+ggplot(forest_data, aes(x = temp, y = area)) +
+  geom_segment(aes(xend = temp, yend = rf_tree_pred), alpha = .2) +  # alpha to fade lines
+  geom_point() +
+  geom_point(aes(y = rf_tree_pred), shape = 1, color = "blue") +
+  theme_bw()
+```
+
+```{r}
+library(ggplot2)
+ggplot(forest_data, aes(x = RH, y = area)) +
+  geom_segment(aes(xend = RH, yend = rf_tree_pred), alpha = .2) +  # alpha to fade lines
+  geom_point() +
+  geom_point(aes(y = rf_tree_pred), shape = 1, color = "blue") +
+  theme_bw()
+```
+
+
+```{r}
+plot(model2, type ="l")
+```
+
+```{r}
+varImpPlot(model2)
+```
+
